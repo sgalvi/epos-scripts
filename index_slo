@@ -1,0 +1,37 @@
+#!/bin/bash
+
+list="/mnt/slo-rinex/rinex2.lst"
+
+# Verifica che il file della lista esista
+if [ ! -f "$list" ]; then
+    echo "Errore: Il file $list non esiste."
+    exit 1
+fi
+
+
+# Funzione per generare la lista dei file
+base_link="rinex_slo/"
+# Esecuzione del primo comando
+echo "Esecuzione di indexGeodeticData.py..."
+python3 /home/crs/indexGD/indexGeodeticData.py -l "${list}" -t RINEX2 -s 24h -f 30s -r "${base_link}/%YYYY%/%DOY%" -d "FReDNet_DC" -w http://localhost:8000/gps/data/rinex
+
+# Verifica del risultato del primo comando
+if [ $? -ne 0 ]; then
+    echo "Errore nell'esecuzione di indexGeodeticData.py"
+    exit 1
+fi
+
+# Esecuzione del secondo comando
+echo "Esecuzione di RunQC.pl..."
+/home/crs/RunQC/RunQC.pl --list_rxo "${list}" --brdc_dir /home/crs/BRDC --post_api http://localhost:8000
+
+# Verifica del risultato del secondo comando
+if [ $? -ne 0 ]; then
+    echo "Errore nell'esecuzione di RunQC.pl"
+    exit 1
+fi
+
+echo "Elaborazione completata con successo."
+
+#pulisci la lista di files
+ssh frednet@158.110.30.115 "rm -f /mnt/EXTDISK/data/EXTNETS/SLO/rinex/rinex2.lst"

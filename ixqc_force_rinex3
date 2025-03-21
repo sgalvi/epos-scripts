@@ -1,0 +1,94 @@
+#!/bin/bash
+
+# Funzione per mostrare l'uso dello script
+usage() {
+    echo "Uso: $0 -l <lista_file> -w <rete>"
+    echo "  -l: nome del file contenente la lista dei file RINEX"
+    echo "  -w: nome della rete (es. frednet)"
+    echo "  --clear: se specificato, pulisce la lista inserita"
+    exit 1
+}
+
+# Inizializzazione delle variabili
+list=""
+web=""
+clear_flag=false
+
+# Parsing degli argomenti
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -l) list="$2"; shift ;;
+        -w) web="$2"; shift ;;
+        --clear) clear_flag=true ;;
+        *) usage ;;
+    esac
+    shift
+done
+
+# Verifica che entrambi i parametri siano stati forniti
+if [ -z "$list" ] || [ -z "$web" ]; then
+    echo "Errore: Entrambi i parametri -l e -w sono obbligatori."
+    usage
+fi
+
+# Verifica che il file della lista esista
+if [ ! -f "$list" ]; then
+    echo "Errore: Il file $list non esiste."
+    exit 1
+fi
+# Mappa delle reti ai percorsi
+declare -A network_paths
+network_paths[frednet]="frednet_data/rinex/"
+network_paths[fvg]="rinex_fvg/"
+network_paths[slo]="rinex_slo/"
+network_paths[aust]="rinex_aust/"
+declare -A rinex_version
+rinex_version[frednet]="RINEX3"
+rinex_version[fvg]="RINEX3"
+rinex_version[slo]="RINEX3"
+rinex_version[aust]="RINEX3"
+
+
+# Verifica che la rete specificata sia valida
+if [ -z "${network_paths[$web]}" ]; then
+    echo "Errore: Rete non valida. Usare frednet, fvg, slo o aust."
+    exit 1
+fi
+
+# Verifica che la versione RINEX sia disponibile
+if [ -z "${rinex_version[$web]}" ]; then
+    echo "Errore: Versione RINEX non trovata per la rete $web."
+    exit 1
+fi
+
+# Funzione per generare la lista dei file
+
+base_link=${network_paths[$web]}
+rinex_v=${rinex_version[$web]}
+# Esecuzione del primo comando
+echo "Esecuzione di indexGeodeticData.py..."
+python3 /home/crs/indexGD/indexGeodeticData.py -l "${list}" -t ${rinex_v} -s 24h -f 30s -r "${base_link}/%YYYY%/%DOY%" -d "FReDNet_DC" -w http://localhost:8000/gps/data/rinex
+
+# Verifica del risultato del primo comando
+if [ $? -ne 0 ]; then
+    echo "Errore nell'esecuzione di indexGeodeticData.py"
+    exit 1
+fi
+
+# Esecuzione del secondo comando
+echo "Esecuzione di RunQC.pl..."
+/home/crs/RunQC/RunQC.pl --list_rxo "${list}" --brdc_dir /home/crs/BRDC --post_api http://localhost:8000
+
+# Verifica del risultato del secondo comando
+if [ $? -ne 0 ]; then
+    echo "Errore nell'esecuzione di RunQC.pl"
+    exit 1
+fi
+
+echo "Elaborazione completata con successo."
+
+# Rinomina il file della lista in 'lista1' se è stato specificato il flag --clear
+if [ "$clear_flag" = true ]; then
+    ssh sgalvi@158.110.30.115 /home/sgalvi/polling/clean.list $web
+    echo "File $list cleaned"
+fi
